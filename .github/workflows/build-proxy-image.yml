@@ -2,7 +2,9 @@ name: Build and Push Karakeep Proxy Image
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+    tags:
+      - 'proxy-v*'
     paths:
       - 'tools/karakeep-proxy/**'
       - '.github/workflows/build-proxy-image.yml'
