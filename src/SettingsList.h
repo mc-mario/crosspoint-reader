@@ -12,6 +12,7 @@
 
 #include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
+#include "KarakeepCredentialStore.h"
 #include "activities/settings/SettingsActivity.h"
 
 // Build the font family setting dynamically. When registry is non-null, SD card fonts
@@ -219,6 +220,21 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
               KOREADER_STORE.saveToFile();
             },
             "koMatchMethod", StrId::STR_KOREADER_SYNC),
+        // --- Karakeep (web-only, uses KarakeepCredentialStore) ---
+        SettingInfo::DynamicString(
+            StrId::STR_KARAKEEP_URL, [] { return KARAKEEP_STORE.getProxyUrl(); },
+            [](const std::string& v) {
+              KARAKEEP_STORE.setCredentials(v, KARAKEEP_STORE.getApiKey());
+              KARAKEEP_STORE.saveToFile();
+            },
+            "karakeepUrl", StrId::STR_KARAKEEP),
+        SettingInfo::DynamicString(
+            StrId::STR_KARAKEEP_API_KEY, [] { return KARAKEEP_STORE.getApiKey(); },
+            [](const std::string& v) {
+              KARAKEEP_STORE.setCredentials(KARAKEEP_STORE.getProxyUrl(), v);
+              KARAKEEP_STORE.saveToFile();
+            },
+            "karakeepApiKey", StrId::STR_KARAKEEP),
         // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
         SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                             "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR),

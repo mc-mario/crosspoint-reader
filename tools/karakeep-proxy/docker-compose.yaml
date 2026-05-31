@@ -1,0 +1,23 @@
+services:
+  karakeep-proxy:
+    image: ghcr.io/tu-usuario/karakeep-proxy:latest
+    container_name: karakeep-proxy
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      - KARAKEEP_URL=http://karakeep:3000
+      - KARAKEEP_API_KEY=${KARAKEEP_API_KEY}
+      - PROXY_PORT=8787
+      - READ_TAG=Read
+    networks:
+      - karakeep-net
+
+  # Tu instancia de Karakeep (ejemplo, ajusta según tu docker-compose actual)
+  # karakeep:
+  #   image: ghcr.io/karakeep-app/karakeep:release
+  #   ...
+
+networks:
+  karakeep-net:
+    driver: bridge
