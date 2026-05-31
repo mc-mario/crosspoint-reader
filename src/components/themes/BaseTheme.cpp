@@ -654,13 +654,18 @@ void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
                       static_cast<int>(i - pageStart) * (rowStep);
 
     const bool selected = selectedIndex == i;
+    const int tileX = rect.x + BaseMetrics::values.contentSidePadding;
+    const int tileW = rect.width - BaseMetrics::values.contentSidePadding * 2;
+
+    // Clear the tile area (white background)
+    renderer.fillRect(tileX, tileY, tileW, BaseMetrics::values.menuRowHeight, false);
 
     if (selected) {
-      renderer.fillRect(rect.x + BaseMetrics::values.contentSidePadding, tileY,
-                        rect.width - BaseMetrics::values.contentSidePadding * 2, BaseMetrics::values.menuRowHeight);
+      // Filled black background for selected item
+      renderer.fillRect(tileX, tileY, tileW, BaseMetrics::values.menuRowHeight, true);
     } else {
-      renderer.drawRect(rect.x + BaseMetrics::values.contentSidePadding, tileY,
-                        rect.width - BaseMetrics::values.contentSidePadding * 2, BaseMetrics::values.menuRowHeight);
+      // Outline only for unselected items
+      renderer.drawRect(tileX, tileY, tileW, BaseMetrics::values.menuRowHeight);
     }
 
     std::string labelStr = buttonLabel(i);
