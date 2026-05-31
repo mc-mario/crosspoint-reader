@@ -643,9 +643,15 @@ void BaseTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
 void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                                const std::function<std::string(int index)>& buttonLabel,
                                const std::function<UIIcon(int index)>& rowIcon) const {
-  for (int i = 0; i < buttonCount; ++i) {
+  const int rowStep = BaseMetrics::values.menuRowHeight + BaseMetrics::values.menuSpacing;
+  const int availH = rect.height - BaseMetrics::values.verticalSpacing;
+  const int pageItems = std::max(1, availH / rowStep);
+  const int safeSelected = std::max(0, selectedIndex);
+  const int pageStart = (safeSelected / pageItems) * pageItems;
+
+  for (int i = pageStart; i < buttonCount && i < pageStart + pageItems; ++i) {
     const int tileY = BaseMetrics::values.verticalSpacing + rect.y +
-                      static_cast<int>(i) * (BaseMetrics::values.menuRowHeight + BaseMetrics::values.menuSpacing);
+                      static_cast<int>(i - pageStart) * (rowStep);
 
     const bool selected = selectedIndex == i;
 
