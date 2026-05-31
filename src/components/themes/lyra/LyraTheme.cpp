@@ -512,10 +512,15 @@ void LyraTheme::drawEmptyRecents(const GfxRenderer& renderer, const Rect rect) c
 void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                                const std::function<std::string(int index)>& buttonLabel,
                                const std::function<UIIcon(int index)>& rowIcon) const {
-  for (int i = 0; i < buttonCount; ++i) {
+  const int rowStep = LyraMetrics::values.menuRowHeight + LyraMetrics::values.menuSpacing;
+  const int pageItems = std::max(1, rect.height / rowStep);
+  const int safeSelected = std::max(0, selectedIndex);
+  const int pageStart = (safeSelected / pageItems) * pageItems;
+
+  for (int i = pageStart; i < buttonCount && i < pageStart + pageItems; ++i) {
     int tileWidth = rect.width - LyraMetrics::values.contentSidePadding * 2;
     Rect tileRect = Rect{rect.x + LyraMetrics::values.contentSidePadding,
-                         rect.y + i * (LyraMetrics::values.menuRowHeight + LyraMetrics::values.menuSpacing), tileWidth,
+                         rect.y + (i - pageStart) * rowStep, tileWidth,
                          LyraMetrics::values.menuRowHeight};
 
     const bool selected = selectedIndex == i;

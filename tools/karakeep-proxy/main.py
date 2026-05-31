@@ -29,6 +29,7 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup, NavigableString
 from flask import Flask, jsonify, Response, request
+from PIL import Image
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -165,6 +166,38 @@ def normalize_unicode(text: str) -> str:
     return result.encode('ascii', 'replace').decode('ascii')
 
 
+def crop_to_portrait(image_bytes: bytes) -> bytes:
+    """Crop an image to portrait ratio (3:4) by center-cropping, then resize to 600x800."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        w, h = img.size
+        if w <= 0 or h <= 0:
+            return image_bytes
+
+        # Target ratio: 3:4 (width:height)
+        target_ratio = 3.0 / 4.0
+        current_ratio = w / h
+
+        if current_ratio > target_ratio:
+            # Too wide — crop width from center
+            new_w = int(h * target_ratio)
+            left = (w - new_w) // 2
+            img = img.crop((left, 0, left + new_w, h))
+        elif current_ratio < target_ratio * 0.8:
+            # Too tall — crop height from center
+            new_h = int(w / target_ratio)
+            top = (h - new_h) // 2
+            img = img.crop((0, top, w, top + new_h))
+
+        # Resize to 600x800 for e-ink
+        img = img.resize((600, 800), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=75)
+        return buf.getvalue()
+    except Exception:
+        return image_bytes
+
+
 def fetch_asset(asset_id: str) -> bytes:
     url = f"{KARAKEEP_URL}/api/v1/assets/{asset_id}"
     r = requests.get(url, headers=KARAKEEP_HEADERS, timeout=60)
@@ -231,9 +264,8 @@ def html_to_plaintext(html_bytes: bytes) -> str:
     return normalize_unicode("\n".join(result).strip())
 
 
-def html_to_epub(html_bytes: bytes, title: str, author: str = "") -> bytes:
-    """Convert readability-style HTML into a minimal valid EPUB (ZIP of OPF+NCX+HTML+CSS)
-    without a cover image (Karakeep covers are screenshots, not book covers)."""
+def html_to_epub(html_bytes: bytes, title: str, author: str = "", cover_bytes: Optional[bytes] = None) -> bytes:
+    """Convert readability-style HTML into a minimal valid EPUB (ZIP of OPF+NCX+HTML+CSS+cover)."""
     uid = str(uuid.uuid4())
     safe_title = re.sub(r"[^\w\s-]", "_", title).strip() or "untitled"
 
@@ -297,7 +329,11 @@ img { max-width: 100%; }
 </navMap>
 </ncx>"""
 
-    # OPF (no cover image — Karakeep covers are screenshots, not book covers)
+    # OPF
+    cover_meta = '<meta name="cover" content="cover-image"/>' if cover_bytes else ""
+    cover_item = '\n<item id="cover-image" href="cover.jpg" media-type="image/jpeg"/>' if cover_bytes else ""
+    guide_ref = '\n<reference type="cover" title="Cover" href="cover.jpg"/>' if cover_bytes else ""
+
     opf = f"""<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="BookId">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -305,17 +341,18 @@ img { max-width: 100%; }
 <dc:creator>{html.escape(author or "Karakeep")}</dc:creator>
 <dc:language>en</dc:language>
 <dc:identifier id="BookId">urn:uuid:{uid}</dc:identifier>
+{cover_meta}
 </metadata>
 <manifest>
 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
 <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
-<item id="css" href="style.css" media-type="text/css"/>
+<item id="css" href="style.css" media-type="text/css"/>{cover_item}
 </manifest>
 <spine toc="ncx">
 <itemref idref="chapter1"/>
 </spine>
 <guide>
-<reference type="toc" title="Table of Contents" href="toc.ncx"/>
+<reference type="toc" title="Table of Contents" href="toc.ncx"/>{guide_ref}
 </guide>
 </package>"""
 
@@ -329,6 +366,8 @@ img { max-width: 100%; }
         zf.writestr("toc.ncx", ncx)
         zf.writestr("chapter1.xhtml", chapter_html)
         zf.writestr("style.css", css)
+        if cover_bytes:
+            zf.writestr("cover.jpg", cover_bytes)
 
     return buf.getvalue()
 
@@ -376,10 +415,18 @@ def get_content(bookmark_id):
     except requests.HTTPError as e:
         return jsonify({"error": f"Failed to fetch asset: {e}"}), 502
 
+    # Fetch cover if available, crop to portrait ratio for e-ink
+    cover_bytes = None
+    if simple.get("coverAssetId"):
+        try:
+            cover_bytes = crop_to_portrait(fetch_asset(simple["coverAssetId"]))
+        except Exception:
+            pass  # cover is optional
+
     author = bm.get("content", {}).get("author", "")
 
     if fmt == "epub":
-        data = html_to_epub(raw, simple["title"], author)
+        data = html_to_epub(raw, simple["title"], author, cover_bytes)
         filename = re.sub(r"[^\w\s-]", "_", simple["title"]).strip() + ".epub"
         return Response(data, mimetype="application/epub+zip", headers={
             "Content-Disposition": f'attachment; filename="{filename}"'

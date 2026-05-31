@@ -85,9 +85,7 @@ void KarakeepBrowserActivity::loop() {
     const bool hasItems = !bookmarks.empty();
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) && hasItems) {
-      consumeConfirm = true;
       if (isOffline) {
-        // Offline mode: build actions for local file
         buildActionsForLocal({bookmarks[selectorIndex].localPath, bookmarks[selectorIndex].title});
       } else {
         buildActionsFor(bookmarks[selectorIndex]);
@@ -222,17 +220,25 @@ void KarakeepBrowserActivity::render(RenderLock&&) {
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == BrowserState::BOOKMARK_ACTIONS) {
-    // Draw action sub-menu below the title
-    int y = 50 + (selectorIndex % PAGE_ITEMS) * 20 + 25;
-    renderer.drawRect(10, y, pageWidth - 20,
-                       static_cast<int>(actions.size()) * 20 + 10);
-    for (size_t i = 0; i < actions.size(); i++) {
-      int ay = y + 8 + static_cast<int>(i) * 20;
-      if (static_cast<int>(i) == actionIndex) {
-        renderer.fillRect(15, ay - 1, pageWidth - 30, 20);
-        renderer.drawText(UI_10_FONT_ID, 25, ay, actions[i].label.c_str(), false);
+    // Draw action sub-menu centered on screen with opaque background
+    const int actionCount = static_cast<int>(actions.size());
+    const int menuW = 280;
+    const int actionH = 28;
+    const int menuH = actionCount * actionH + 16;
+    const int menuX = (pageWidth - menuW) / 2;
+    const int menuY = (pageHeight - menuH) / 2;
+
+    // Opaque background to cover list items
+    renderer.fillRect(menuX - 2, menuY - 2, menuW + 4, menuH + 4);
+    renderer.drawRect(menuX, menuY, menuW, menuH);
+
+    for (int i = 0; i < actionCount; i++) {
+      const int ay = menuY + 8 + i * actionH;
+      if (i == actionIndex) {
+        renderer.fillRect(menuX + 4, ay, menuW - 8, actionH);
+        renderer.drawText(UI_10_FONT_ID, menuX + 16, ay + 4, actions[i].label.c_str(), false);
       } else {
-        renderer.drawText(UI_10_FONT_ID, 25, ay, actions[i].label.c_str(), true);
+        renderer.drawText(UI_10_FONT_ID, menuX + 16, ay + 4, actions[i].label.c_str(), true);
       }
     }
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
