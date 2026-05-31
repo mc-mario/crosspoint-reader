@@ -16,6 +16,13 @@ class KarakeepClient {
     std::string id;
     std::string title;
     bool isRead = false;
+    bool isCached = false;   // downloaded locally to /karakeep/
+    std::string localPath;   // SD path if cached
+  };
+
+  struct LocalFile {
+    std::string path;    // /karakeep/filename.epub
+    std::string title;   // derived from filename
   };
 
   /**
@@ -42,6 +49,14 @@ class KarakeepClient {
 
   /** Mark bookmark as unread via proxy. */
   static Error markUnread(const std::string& bookmarkId);
+
+  /** Add or remove tags on a bookmark via proxy. */
+  static Error updateTags(const std::string& bookmarkId,
+                           const std::vector<std::string>& addTags,
+                           const std::vector<std::string>& removeTags);
+
+  /** Scan /karakeep/ for downloaded EPUB files. */
+  static void scanLocalFiles(std::vector<LocalFile>& out);
 
   static const char* errorString(Error error);
 };

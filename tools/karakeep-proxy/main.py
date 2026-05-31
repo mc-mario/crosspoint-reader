@@ -21,6 +21,7 @@ import uuid
 import json
 import io
 import zipfile
+import unicodedata
 import html
 from datetime import datetime
 from typing import Optional
@@ -149,6 +150,21 @@ def simplify_bookmark(bm: dict) -> dict:
 # HTML Converters
 # ---------------------------------------------------------------------------
 
+_UNICODE_TO_ASCII = {
+    '\u2013': '-',   '\u2014': '--',   '\u2018': "'",   '\u2019': "'",
+    '\u201c': '"',   '\u201d': '"',    '\u2026': '...',  '\u00a0': ' ',
+    '\u2022': '*',   '\u00b0': 'deg',  '\u2122': '(TM)', '\u00ae': '(R)',
+    '\u00a9': '(c)', '\u201a': ',',    '\u201e': '"',
+}
+
+def normalize_unicode(text: str) -> str:
+    """Replace common Unicode characters with ASCII equivalents for e-ink rendering."""
+    for uni, ascii_ in _UNICODE_TO_ASCII.items():
+        text = text.replace(uni, ascii_)
+    result = unicodedata.normalize('NFKD', text)
+    return result.encode('ascii', 'replace').decode('ascii')
+
+
 def fetch_asset(asset_id: str) -> bytes:
     url = f"{KARAKEEP_URL}/api/v1/assets/{asset_id}"
     r = requests.get(url, headers=KARAKEEP_HEADERS, timeout=60)
@@ -212,11 +228,12 @@ def html_to_plaintext(html_bytes: bytes) -> str:
         result.append(line)
         prev_blank = blank
 
-    return "\n".join(result).strip()
+    return normalize_unicode("\n".join(result).strip())
 
 
-def html_to_epub(html_bytes: bytes, title: str, author: str = "", cover_bytes: Optional[bytes] = None) -> bytes:
-    """Convert readability-style HTML into a minimal valid EPUB (ZIP of OPF+NCX+HTML+CSS)."""
+def html_to_epub(html_bytes: bytes, title: str, author: str = "") -> bytes:
+    """Convert readability-style HTML into a minimal valid EPUB (ZIP of OPF+NCX+HTML+CSS)
+    without a cover image (Karakeep covers are screenshots, not book covers)."""
     uid = str(uuid.uuid4())
     safe_title = re.sub(r"[^\w\s-]", "_", title).strip() or "untitled"
 
@@ -235,7 +252,9 @@ def html_to_epub(html_bytes: bytes, title: str, author: str = "", cover_bytes: O
                 p.string = str(child)
                 child.replace_with(p)
 
-    # Generate chapter HTML
+    # Generate chapter HTML with normalized text for e-ink rendering
+    body_html = body.decode_contents() if body else "<p>(No content)</p>"
+    body_html = normalize_unicode(body_html)
     chapter_html = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -245,7 +264,7 @@ def html_to_epub(html_bytes: bytes, title: str, author: str = "", cover_bytes: O
 <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
-{body.decode_contents() if body else "<p>(No content)</p>"}
+{body_html}
 </body>
 </html>"""
 
@@ -278,12 +297,7 @@ img { max-width: 100%; }
 </navMap>
 </ncx>"""
 
-    # OPF
-    has_cover = "cover-image" if cover_bytes else ""
-    cover_meta = '<meta name="cover" content="cover-image"/>' if cover_bytes else ""
-    cover_item = '<item id="cover-image" href="cover.jpg" media-type="image/jpeg"/>' if cover_bytes else ""
-    guide_ref = '<reference type="cover" title="Cover" href="cover.jpg"/>' if cover_bytes else ""
-
+    # OPF (no cover image — Karakeep covers are screenshots, not book covers)
     opf = f"""<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="BookId">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -291,20 +305,17 @@ img { max-width: 100%; }
 <dc:creator>{html.escape(author or "Karakeep")}</dc:creator>
 <dc:language>en</dc:language>
 <dc:identifier id="BookId">urn:uuid:{uid}</dc:identifier>
-{cover_meta}
 </metadata>
 <manifest>
 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
 <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
 <item id="css" href="style.css" media-type="text/css"/>
-{cover_item}
 </manifest>
 <spine toc="ncx">
 <itemref idref="chapter1"/>
 </spine>
 <guide>
 <reference type="toc" title="Table of Contents" href="toc.ncx"/>
-{guide_ref}
 </guide>
 </package>"""
 
@@ -318,8 +329,6 @@ img { max-width: 100%; }
         zf.writestr("toc.ncx", ncx)
         zf.writestr("chapter1.xhtml", chapter_html)
         zf.writestr("style.css", css)
-        if cover_bytes:
-            zf.writestr("cover.jpg", cover_bytes)
 
     return buf.getvalue()
 
@@ -367,18 +376,10 @@ def get_content(bookmark_id):
     except requests.HTTPError as e:
         return jsonify({"error": f"Failed to fetch asset: {e}"}), 502
 
-    # Try to fetch cover if available
-    cover_bytes = None
-    if simple.get("coverAssetId"):
-        try:
-            cover_bytes = fetch_asset(simple["coverAssetId"])
-        except Exception:
-            pass  # cover is optional
-
     author = bm.get("content", {}).get("author", "")
 
     if fmt == "epub":
-        data = html_to_epub(raw, simple["title"], author, cover_bytes)
+        data = html_to_epub(raw, simple["title"], author)
         filename = re.sub(r"[^\w\s-]", "_", simple["title"]).strip() + ".epub"
         return Response(data, mimetype="application/epub+zip", headers={
             "Content-Disposition": f'attachment; filename="{filename}"'

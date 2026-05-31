@@ -359,6 +359,79 @@ KarakeepClient::Error KarakeepClient::markUnread(const std::string& bookmarkId) 
   return OK;
 }
 
+KarakeepClient::Error KarakeepClient::updateTags(const std::string& bookmarkId,
+                                                    const std::vector<std::string>& addTags,
+                                                    const std::vector<std::string>& removeTags) {
+  if (!KARAKEEP_STORE.hasCredentials()) return NO_CREDENTIALS;
+
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < MIN_HEAP_FOR_TLS) return LOW_MEMORY;
+
+  std::string url = buildProxyUrl("/bookmarks/" + bookmarkId + "/tags");
+
+  // Build JSON body
+  std::string body = R"({"add":[)";
+  for (size_t i = 0; i < addTags.size(); ++i) {
+    if (i > 0) body += ",";
+    body += "\"" + addTags[i] + "\"";
+  }
+  body += R"(],"remove":[)";
+  for (size_t i = 0; i < removeTags.size(); ++i) {
+    if (i > 0) body += ",";
+    body += "\"" + removeTags[i] + "\"";
+  }
+  body += "]}";
+
+  esp_http_client_config_t config = {};
+  config.url = url.c_str();
+  config.event_handler = httpEventHandler;
+  config.method = HTTP_METHOD_POST;
+  config.timeout_ms = HTTP_TIMEOUT_MS;
+  config.buffer_size = HTTP_BUF_SIZE;
+  config.buffer_size_tx = HTTP_BUF_SIZE;
+  config.crt_bundle_attach = esp_crt_bundle_attach;
+
+  ResponseBuffer buf;
+  config.user_data = &buf;
+
+  esp_http_client_handle_t client = esp_http_client_init(&config);
+  if (!client) return NETWORK_ERROR;
+
+  if (esp_http_client_set_header(client, "Authorization",
+                                  ("Bearer " + KARAKEEP_STORE.getApiKey()).c_str()) != ESP_OK) {
+    esp_http_client_cleanup(client);
+    return NETWORK_ERROR;
+  }
+  esp_http_client_set_header(client, "Content-Type", "application/json");
+  esp_http_client_set_post_field(client, body.c_str(), body.size());
+
+  esp_err_t err = esp_http_client_perform(client);
+  int status = esp_http_client_get_status_code(client);
+  esp_http_client_cleanup(client);
+
+  if (err != ESP_OK) return NETWORK_ERROR;
+  if (status != 200) return SERVER_ERROR;
+  return OK;
+}
+
+void KarakeepClient::scanLocalFiles(std::vector<LocalFile>& out) {
+  out.clear();
+  auto files = Storage.listFiles("/karakeep");
+  for (const auto& f : files) {
+    std::string name = f.c_str();
+    if (name.size() < 5 || name.substr(name.size() - 5) != ".epub") continue;
+    LocalFile lf;
+    lf.path = "/karakeep/" + name;
+    std::string title = name.substr(0, name.size() - 5);  // strip .epub
+    // Trim leading/trailing underscores from sanitization
+    while (!title.empty() && title.front() == '_') title.erase(0, 1);
+    while (!title.empty() && title.back() == '_') title.pop_back();
+    if (title.empty()) title = name;
+    lf.title = title;
+    out.push_back(lf);
+  }
+}
+
 const char* KarakeepClient::errorString(Error error) {
   switch (error) {
     case OK:
