@@ -5,6 +5,9 @@
 #include <Logging.h>
 #include <Serialization.h>
 
+// Singleton instance definition
+KarakeepCredentialStore KarakeepCredentialStore::instance;
+
 namespace {
 constexpr char KARAKEEP_FILE[] = "/.crosspoint/karakeep.json";
 
