@@ -399,7 +399,7 @@ def mark_read(bookmark_id):
     if READ_TAG in current_tags:
         return jsonify({"status": "already_read"})
 
-    karakeep_post(f"/bookmarks/{bookmark_id}/tags", {"tags": [READ_TAG]})
+    karakeep_post(f"/bookmarks/{bookmark_id}/tags", {"tags": [{"tagName": READ_TAG}]})
     return jsonify({"status": "marked_read", "tag": READ_TAG})
 
 
